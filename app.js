@@ -3736,157 +3736,44 @@ function handleMapPinDrop(latlng) {
     iconSize: [36, 36],
     iconAnchor: [18, 18]
   });
-
   tempPinMarker = L.marker([lat, lng], { icon: tempIcon }).addTo(mapObj);
   mapObj.panTo([lat, lng], { animate: true });
   toast('🔍 Looking up address…', 't-info');
 
-  _dzReverseGeocode_(lat, lng, function(result) {
-    if (tempPinMarker && mapObj) {
-      mapObj.removeLayer(tempPinMarker);
-      tempPinMarker = null;
-    }
-
-    showPinConfirm(
-      (result && result.address) || '',
-      (result && result.city) || '',
-      (result && result.state) || '',
-      (result && result.zip) || '',
-      lat,
-      lng
-    );
-
-    if (!result || !result.address || String(result.address).indexOf('Building at ') === 0) {
-      toast('⚠ Address lookup was limited — please confirm manually', 't-err');
-    }
-  });
-}
-
-function _dzReverseGeocode_(lat, lng, callback) {
-  var done = false;
-
-  function finish(result) {
-    if (done) return;
-    done = true;
-    callback(result);
-  }
-
-  var censusUrl =
-    'https://geocoding.geo.census.gov/geocoder/locations/coordinates' +
-    '?x=' + encodeURIComponent(lng) +
-    '&y=' + encodeURIComponent(lat) +
-    '&benchmark=2020&format=json';
-
-  var timeoutMs = 2500;
-  var timeoutId = setTimeout(function() {
-    _dzNominatimReverse_(lat, lng, finish);
-  }, timeoutMs);
-
-  fetch(censusUrl)
-    .then(function(r) {
-      if (!r.ok) throw new Error('Census returned ' + r.status);
-      return r.json();
-    })
-    .then(function(data) {
-      if (done) return;
-      clearTimeout(timeoutId);
-
-      var matches = data && data.result && data.result.addressMatches;
-      if (matches && matches.length > 0) {
-        var m = matches[0];
-        var addr = m.addressComponents || {};
-
-        var streetNum  = (addr.fromAddress || '').split('-')[0].trim();
-        var streetName = (addr.streetName || '').trim();
-        var suffix     = (addr.suffixType || '').trim();
-        var street     = [streetNum, streetName, suffix].filter(Boolean).join(' ');
-
-        if (!street) {
-          street = (m.matchedAddress || '').split(',')[0].trim();
-        }
-
-        finish({
-          address: street,
-          city:    (addr.city || '').trim(),
-          state:   (addr.state || '').trim(),
-          zip:     (addr.zip || '').trim()
-        });
-      } else {
-        _dzNominatimReverse_(lat, lng, finish);
-      }
-    })
-    .catch(function() {
-      if (done) return;
-      clearTimeout(timeoutId);
-      _dzNominatimReverse_(lat, lng, finish);
-    });
-}
-
-function _dzNominatimReverse_(lat, lng, callback) {
-  var done = false;
-
-  function finish(result) {
-    if (done) return;
-    done = true;
-    callback(result);
-  }
-
-  var url = 'https://nominatim.openstreetmap.org/reverse?format=json' +
-            '&lat=' + encodeURIComponent(lat) +
-            '&lon=' + encodeURIComponent(lng) +
+  // Reverse geocode using Nominatim
+  var url = 'https://nominatim.openstreetmap.org/reverse?format=json&lat=' +
+            encodeURIComponent(lat) + '&lon=' + encodeURIComponent(lng) +
             '&zoom=18&addressdetails=1';
 
-  var timeoutMs = 2500;
-  var timeoutId = setTimeout(function() {
-    finish({
-      address: 'Building at ' + lat.toFixed(5) + ',' + lng.toFixed(5),
-      city: '',
-      state: '',
-      zip: ''
-    });
-  }, timeoutMs);
-
-  fetch(url, {
-    headers: {
-      'Accept': 'application/json',
-      'User-Agent': 'FieldSalesApp/1.0'
-    }
-  })
-    .then(function(r) {
-      if (!r.ok) throw new Error('Nominatim returned ' + r.status);
-      return r.json();
-    })
+  fetch(url, { headers: { 'Accept': 'application/json', 'User-Agent': 'FieldSalesApp/1.0' } })
+    .then(function(r) { return r.json(); })
     .then(function(data) {
-      if (done) return;
-      clearTimeout(timeoutId);
+      // Remove temp pin
+      if (tempPinMarker && mapObj) { mapObj.removeLayer(tempPinMarker); tempPinMarker = null; }
 
-      var a  = data && data.address ? data.address : {};
-      var hn = (a.house_number || '').trim();
-      var rd = (a.road || a.pedestrian || a.path || '').trim();
+      var a = data && data.address ? data.address : {};
 
-      var street = hn && rd
-        ? (hn + ' ' + rd)
-        : (rd || (data.display_name ? data.display_name.split(',')[0].trim() : ''));
+      // Build street: house_number + road is the most reliable combo
+      var street = ((a.house_number || '') + ' ' + (a.road || a.pedestrian || a.path || '')).trim();
+      if (!street) {
+        street = data && data.display_name
+          ? data.display_name.split(',')[0].trim()
+          : '';
+      }
 
-      finish({
-        address: street || ('Building at ' + lat.toFixed(5) + ',' + lng.toFixed(5)),
-        city:    a.city || a.town || a.village || a.hamlet || '',
-        state:   a.state ? stateAbbr(a.state) : '',
-        zip:     a.postcode || ''
-      });
+      var city  = a.city || a.town || a.village || a.hamlet || a.county || '';
+      var state = a.state ? stateAbbr(a.state) : '';
+      var zip   = a.postcode || '';
+
+      showPinConfirm(street, city, state, zip, lat, lng);
     })
     .catch(function() {
-      if (done) return;
-      clearTimeout(timeoutId);
-      finish({
-        address: 'Building at ' + lat.toFixed(5) + ',' + lng.toFixed(5),
-        city: '',
-        state: '',
-        zip: ''
-      });
+      if (tempPinMarker && mapObj) { mapObj.removeLayer(tempPinMarker); tempPinMarker = null; }
+      // Show modal with empty fields so rep can type the address manually
+      showPinConfirm('', '', '', '', lat, lng);
+      toast('⚠ Could not look up address — enter it manually', 't-err');
     });
 }
-
 function showPinConfirm(street, city, state, zip, lat, lng) {
   _pendingPin = { lat: lat, lng: lng };
   document.getElementById('pin-cf-street').value = street;
