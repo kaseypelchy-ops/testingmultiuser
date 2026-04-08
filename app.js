@@ -3736,43 +3736,32 @@ function handleMapPinDrop(latlng) {
     iconSize: [36, 36],
     iconAnchor: [18, 18]
   });
+
   tempPinMarker = L.marker([lat, lng], { icon: tempIcon }).addTo(mapObj);
   mapObj.panTo([lat, lng], { animate: true });
   toast('🔍 Looking up address…', 't-info');
 
-  // Reverse geocode using Nominatim
-  var url = 'https://nominatim.openstreetmap.org/reverse?format=json&lat=' +
-            encodeURIComponent(lat) + '&lon=' + encodeURIComponent(lng) +
-            '&zoom=18&addressdetails=1';
+  // Use Census first, then fall back automatically inside your helper
+  _dzCensusReverse_(lat, lng, function(result) {
+    // Remove temp pin
+    if (tempPinMarker && mapObj) {
+      mapObj.removeLayer(tempPinMarker);
+      tempPinMarker = null;
+    }
 
-  fetch(url, { headers: { 'Accept': 'application/json', 'User-Agent': 'FieldSalesApp/1.0' } })
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-      // Remove temp pin
-      if (tempPinMarker && mapObj) { mapObj.removeLayer(tempPinMarker); tempPinMarker = null; }
+    showPinConfirm(
+      (result && result.address) || '',
+      (result && result.city) || '',
+      (result && result.state) || '',
+      (result && result.zip) || '',
+      lat,
+      lng
+    );
 
-      var a = data && data.address ? data.address : {};
-
-      // Build street: house_number + road is the most reliable combo
-      var street = ((a.house_number || '') + ' ' + (a.road || a.pedestrian || a.path || '')).trim();
-      if (!street) {
-        street = data && data.display_name
-          ? data.display_name.split(',')[0].trim()
-          : '';
-      }
-
-      var city  = a.city || a.town || a.village || a.hamlet || a.county || '';
-      var state = a.state ? stateAbbr(a.state) : '';
-      var zip   = a.postcode || '';
-
-      showPinConfirm(street, city, state, zip, lat, lng);
-    })
-    .catch(function() {
-      if (tempPinMarker && mapObj) { mapObj.removeLayer(tempPinMarker); tempPinMarker = null; }
-      // Show modal with empty fields so rep can type the address manually
-      showPinConfirm('', '', '', '', lat, lng);
-      toast('⚠ Could not look up address — enter it manually', 't-err');
-    });
+    if (!result || !result.address) {
+      toast('⚠ Could not confidently look up address — please confirm manually', 't-err');
+    }
+  });
 }
 
 function showPinConfirm(street, city, state, zip, lat, lng) {
