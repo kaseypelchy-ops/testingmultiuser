@@ -23,10 +23,10 @@ var selSlot    = null;
 //  The webhook URL is the deployed Apps Script web app URL.
 // ──────────────────────────────────────────────────────────
 var TEAMS = {
-  'Team Alpha': {
+  'Fiber Sales Team, LLC': {
     webhook: 'https://script.google.com/macros/s/AKfycbyyqHh3H5qbBxB2fP9dPsymDoreXGwvrjCLT-ROQGBLMjBXKpprt3LWCC2aHbbeovJp/exec'
   },
-  'PA Team': {
+  'Sales Focus Inc.': {
     webhook: 'https://script.google.com/macros/s/AKfycbz906-WFbhMixpmKiX9bbX86FOHGwltVkLehJFd5z7AtAt-dJXavHHl7uPr2TgOnAc1/exec'
   }
   // To add more teams, duplicate the block above:
