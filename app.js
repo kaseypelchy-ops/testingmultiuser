@@ -42,6 +42,7 @@ var repPhone   = '';
 var repEmail   = '';
 var repWebsite = 'https://www.zitomedia.net';
 var activeTerritory = '';
+var activeTerritoryTab = '';
 var mapObj     = null;
 var mapMarkers = {};
 var clusterGroup = null; // Leaflet.markercluster group — holds all address pins
@@ -63,7 +64,7 @@ var COLORS = {
   nothome2:      '#f59e0b',
   nothome3:      '#f59e0b',
   nothome4:      '#f59e0b',
-  brightspeed:   '#ef4444',   // red
+  fibercompetitor:   '#ef4444',   // red
   incontract:    '#6366f1',   // indigo
   notinterested: '#ec4899',   // pink
   goback:        '#06b6d4',   // cyan
@@ -674,7 +675,7 @@ var HEAT_COLORS = {
   nothome2:      { fill: '#f59e0b', opacity: 0.45 },
   nothome3:      { fill: '#f59e0b', opacity: 0.50 },
   nothome4:      { fill: '#f59e0b', opacity: 0.55 },
-  brightspeed:   { fill: '#ef4444', opacity: 0.45 },
+  fibercompetitor:   { fill: '#ef4444', opacity: 0.45 },
   competitor:    { fill: '#f97316', opacity: 0.45 },
   incontract:    { fill: '#6366f1', opacity: 0.40 },
   notinterested: { fill: '#ec4899', opacity: 0.45 },
@@ -898,8 +899,8 @@ function getMarkerShape(addr) {
   // Without this guard, any address with a non-empty activeCount field would
   // fall through to the `if (ac && ac !== '') return 'bolt'` catch-all below,
   // incorrectly showing "Active Customer" after Go Back Later / Not Interested /
-  // Brightspeed etc. are submitted.
-  var REP_LOGGED = ['nothome','nothome2','nothome3','nothome4','brightspeed','incontract','notinterested','goback','vacant','business','competitor','activecustomer'];
+  // Fiber Competitor etc. are submitted.
+  var REP_LOGGED = ['nothome','nothome2','nothome3','nothome4','fibercompetitor','incontract','notinterested','goback','vacant','business','competitor','activecustomer'];
   if (REP_LOGGED.indexOf(s) >= 0) return 'dot';
 
   // Sheet-driven status / activeCount checks (untouched addresses only)
@@ -1144,7 +1145,7 @@ var TAG_HTML  = {
   nothome2:      '<span class="ar-tag tag-nh">🚪 NH ×2</span>',
   nothome3:      '<span class="ar-tag tag-nh">🚪 NH ×3</span>',
   nothome4:      '<span class="ar-tag tag-nh">🚪 NH ×4</span>',
-  brightspeed:   '<span class="ar-tag tag-bs">⚡ Brightspeed</span>',
+  fibercompetitor:   '<span class="ar-tag tag-fc">⚡ Fiber Competitor</span>',
   incontract:    '<span class="ar-tag tag-ic">📋 In Contract</span>',
   notinterested: '<span class="ar-tag tag-ni">❌ Not Int.</span>',
   goback:        '<span class="ar-tag tag-gbl">🔄 Go Back</span>',
@@ -1164,7 +1165,7 @@ var DISPOSITIONS = [
   { label:'Not Home x2',    id:'sbt-nh2',  status:'nothome2',       cls:'act-nh',   icon:'🚪🚪',  needsNote:true },
   { label:'Not Home x3',    id:'sbt-nh3',  status:'nothome3',       cls:'act-nh',   icon:'🚪×3',  needsNote:true },
   { label:'Not Home x4',    id:'sbt-nh4',  status:'nothome4',       cls:'act-nh',   icon:'🚪×4',  needsNote:true },
-  { label:'Brightspeed',    id:'sbt-bs',   status:'brightspeed',    cls:'act-bs',   icon:'⚡',    needsNote:true },
+  { label:'Fiber Competitor',    id:'sbt-fc',   status:'fibercompetitor',    cls:'act-fc',   icon:'⚡',    needsNote:true },
   { label:'In Contract',    id:'sbt-ic',   status:'incontract',     cls:'act-ic',   icon:'📋',    needsNote:true },
   { label:'Not Interested', id:'sbt-ni',   status:'notinterested',  cls:'act-ni',   icon:'❌',    needsNote:true,  notePlaceholder:'Example: not interested — already has provider' },
   { label:'Go Back Later',  id:'sbt-gbl',  status:'goback',         cls:'act-cb',   icon:'🔄',    needsNote:true,  notePlaceholder:'Example: customer asked to come back Friday' },
@@ -1215,7 +1216,33 @@ function renderDispositionButtons(addr) {
   });
 })();
 
+// ──────────────────────────────────────────────────────────
+//  TERRITORY TABS — split address list by territory
+// ──────────────────────────────────────────────────────────
+function buildTerritoryTabs() {
+  var el = document.getElementById('territory-tabs');
+  if (!el) return;
+  var terrs = {};
+  addresses.forEach(function(a) { if (a.territory) terrs[a.territory] = true; });
+  var sorted = Object.keys(terrs).sort();
+  if (sorted.length < 2) { el.innerHTML = ''; activeTerritoryTab = ''; return; }
+  var html = '<button class="terr-tab' + (activeTerritoryTab === '' ? ' active' : '') + '" onclick="switchTerritoryTab(\'\')">All</button>';
+  sorted.forEach(function(t) {
+    html += '<button class="terr-tab' + (activeTerritoryTab === t ? ' active' : '') + '" onclick="switchTerritoryTab(\'' + escHtml(t).replace(/'/g, "\\'") + '\')">' + escHtml(t) + '</button>';
+  });
+  el.innerHTML = html;
+}
+
+function switchTerritoryTab(t) {
+  activeTerritoryTab = t;
+  buildTerritoryTabs();
+  buildList(document.getElementById('addr-search').value || null);
+  refreshMapMarkers();
+}
+
 function buildList(filter) {
+  // Update territory tabs
+  buildTerritoryTabs();
   // Update stale badge every time list rebuilds
   updateStaleBadge();
 
@@ -1271,6 +1298,13 @@ function buildList(filter) {
         return s === 'nothome' || s === 'nothome2' || s === 'nothome3' || s === 'nothome4';
       }
       return s === activeDispoFilter;
+    });
+  }
+
+  // Apply territory tab filter if active
+  if (activeTerritoryTab) {
+    list = list.filter(function(a) {
+      return (a.territory || '').trim() === activeTerritoryTab;
     });
   }
 
@@ -2200,6 +2234,11 @@ function refreshMapMarkers() {
   if (!matchesDisposition && !isPending && !isHomesPassed && !isActiveCustomer) return;
 }
 
+    // Territory tab filter
+    if (activeTerritoryTab) {
+      if ((a.territory || '').trim() !== activeTerritoryTab) return;
+    }
+
     var color  = getMarkerColor(a);
     var shape  = getMarkerShape(a);
     var html   = markerHTML(color, shape);
@@ -2402,7 +2441,7 @@ var STATUS_LABELS = {
   mega:          'Mega Sale',
   gig:           'Gig Sale',
   nothome:       'Not Home',
-  brightspeed:   'Brightspeed',
+  fibercompetitor:   'Fiber Competitor',
   incontract:    'In Contract',
   notinterested: 'Not Interested',
   goback:        'Go Back Later',
@@ -2531,7 +2570,7 @@ function renderCompetitor() {
   // Only count knockable homes — existing customers are a separate universe
   var knockable = addresses.filter(isKnockable);
   var total     = knockable.length;
-  var bspeed    = knockable.filter(function(a){ return a.status === 'brightspeed'; }).length;
+  var bspeed    = knockable.filter(function(a){ return a.status === 'fibercompetitor'; }).length;
   var incon     = knockable.filter(function(a){ return a.status === 'incontract'; }).length;
   var sold      = knockable.filter(function(a){ return a.status === 'mega' || a.status === 'gig'; }).length;
   var avail     = knockable.filter(function(a){
@@ -2541,7 +2580,7 @@ function renderCompetitor() {
 
   var cells = [
     { val: total,  label: 'Total Homes', color: 'var(--text)' },
-    { val: bspeed, label: 'Brightspeed', color: '#ef4444' },
+    { val: bspeed, label: 'Fiber Competitor', color: '#ef4444' },
     { val: incon,  label: 'In Contract', color: '#818cf8' },
     { val: sold,   label: 'Zito Sales',  color: '#10b981' },
     { val: avail,  label: 'Still Available', color: '#facc15' },
@@ -2944,7 +2983,7 @@ function renderCompetitorByTerritory() {
   rows += names.map(function(t) {
     var d       = terrMap[t];
     var total   = d.total || 1;
-    var open    = total - d.brightspeed - d.incontract - d.sales;
+    var open    = total - d.fibercompetitor - d.incontract - d.sales;
     open = Math.max(open, 0);
 
     function bar(val, color) {
@@ -2957,7 +2996,7 @@ function renderCompetitorByTerritory() {
 
     return '<div class="ti-comp-row">' +
       '<span class="ti-comp-terr" title="' + escHtml(t) + '">' + escHtml(t) + '</span>' +
-      bar(d.brightspeed, '#ef4444') +
+      bar(d.fibercompetitor, '#ef4444') +
       bar(d.incontract,  '#818cf8') +
       bar(d.sales,       '#10b981') +
       bar(open,          '#06b6d4') +
@@ -3115,7 +3154,7 @@ function buildTerrMap() {
     if (!m[t]) m[t] = {
       total: 0, worked: 0, pending: 0, sales: 0,
       mega: 0, gig: 0, nothome: 0,
-      brightspeed: 0, incontract: 0, goback: 0,
+      fibercompetitor: 0, incontract: 0, goback: 0,
       notinterested: 0, vacant: 0, business: 0,
       // Existing customer count tracked separately for context
       existingCustomers: 0
@@ -3139,8 +3178,8 @@ function buildTerrMap() {
     else if (s === 'nothome2')     d.nothome++;   // count all NH variants together
     else if (s === 'nothome3')     d.nothome++;
     else if (s === 'nothome4')     d.nothome++;
-    else if (s === 'brightspeed')  d.brightspeed++;
-    else if (s === 'competitor')   d.brightspeed++; // lump competitor with BS for coverage stats
+    else if (s === 'fibercompetitor')  d.fibercompetitor++;
+    else if (s === 'competitor')   d.fibercompetitor++; // lump competitor with BS for coverage stats
     else if (s === 'incontract')   d.incontract++;
     else if (s === 'goback')       d.goback++;
     else if (s === 'notinterested') d.notinterested++;
@@ -3516,7 +3555,7 @@ function pingNearbyAddresses() {
     addresses.forEach(function(a) {
       var s = (a.status || '').toLowerCase();
       // Only preserve statuses the rep actually set — not bare 'pending' from the sheet
-      var REP_STATUSES = ['mega','gig','nothome','brightspeed','incontract','notinterested','goback','vacant','business'];
+      var REP_STATUSES = ['mega','gig','nothome','fibercompetitor','incontract','notinterested','goback','vacant','business'];
       if (REP_STATUSES.indexOf(s) >= 0) {
         var key = (a.address + '|' + (a.city || '')).toLowerCase().trim();
         dispositionMap[key] = { status: a.status, note: a.note || '', salesperson: a.salesperson || '', sale: a.sale || null };
@@ -4616,7 +4655,7 @@ function buildAIPayload() {
       gig:             d.gig,
       closeRatePct:    Math.round(cr * 100),
       notHome:         d.nothome,
-      brightspeed:     d.brightspeed,
+      fibercompetitor:     d.fibercompetitor,
       inContract:      d.incontract,
       goBack:          d.goback,
       notInterested:   d.notinterested,
@@ -4764,7 +4803,7 @@ function runAIAnalysis() {
   var terrLines = (payload.territories || []).map(function(t) {
     return '  • ' + t.name + ': ' + t.coveragePct + '% coverage, ' +
       t.closeRatePct + '% close rate, ' + t.sales + ' sales, ' + t.pending + ' pending | ' +
-      'Brightspeed=' + t.brightspeed + ' InContract=' + t.inContract +
+      'Fiber Competitor=' + t.fibercompetitor + ' InContract=' + t.inContract +
       ' NotHome=' + t.notHome + ' GoBack=' + t.goBack;
   }).join('\n') || '  No territory data';
 
