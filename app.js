@@ -2239,6 +2239,20 @@ function confirmSignOut() {
   }, 400);
 }
 
+function hideAppForDirectAccess() {
+  document.body.innerHTML = '';
+  document.body.style.background = '#0d1117';
+}
+
+function requireTeamInURL() {
+  var presetTeam = getPresetTeamNameFromURL();
+  if (!presetTeam || !TEAMS[presetTeam]) {
+    hideAppForDirectAccess();
+    return false;
+  }
+  return true;
+}
+
 function restoreRepProfile() {
   // Populate team dropdown from TEAMS config
   var sel = document.getElementById('team-select');
@@ -2253,7 +2267,7 @@ function restoreRepProfile() {
 
   try {
     var presetTeam = getPresetTeamNameFromURL();
-    var t = presetTeam || localStorage.getItem('fieldos_team') || '';
+    var t = presetTeam || '';
     var n = localStorage.getItem('zito_rep_name')  || '';
     var p = localStorage.getItem('zito_rep_phone') || '';
     var e = localStorage.getItem('zito_rep_email') || '';
@@ -2272,7 +2286,12 @@ function restoreRepProfile() {
   checkLaunchReady();
 }
 
-window.addEventListener('load', function(){ try { restoreRepProfile(); } catch(e) {} });
+window.addEventListener('load', function() {
+  try {
+    if (!requireTeamInURL()) return;
+    restoreRepProfile();
+  } catch(e) {}
+});
 
 function emailCustomerOffer(pkgKey) {
   var to = '';
