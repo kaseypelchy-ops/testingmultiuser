@@ -35,6 +35,15 @@ var TEAMS = {
   // },
 };
 
+var TEAM_LINK_ALIASES = {
+  fiber: 'Fiber Sales Team, LLC',
+  fibersales: 'Fiber Sales Team, LLC',
+  fsi: 'Fiber Sales Team, LLC',
+  sfi: 'Sales Focus Inc.',
+  salesfocus: 'Sales Focus Inc.',
+  salesfocusinc: 'Sales Focus Inc.'
+};
+
 var activeTeam  = '';
 var webhookURL  = '';
 var repName    = 'Rep';
@@ -412,6 +421,49 @@ function checkLaunchReady() {
   var hasAddresses = addresses.length > 0;
   var hasTeam      = !!activeTeam;
   document.getElementById('launch-btn').disabled = !(hasAddresses && hasValidName() && hasTeam);
+}
+
+function getPresetTeamNameFromURL() {
+  try {
+    var params = new URLSearchParams(window.location.search || '');
+    var raw = (params.get('team') || '').toLowerCase().trim();
+    if (!raw) return '';
+    if (TEAM_LINK_ALIASES[raw]) return TEAM_LINK_ALIASES[raw];
+
+    var direct = Object.keys(TEAMS).find(function(name) {
+      return name.toLowerCase().trim() === raw;
+    });
+    return direct || '';
+  } catch (e) {
+    return '';
+  }
+}
+
+function applyPresetTeamFromURL() {
+  var presetTeam = getPresetTeamNameFromURL();
+  var teamStep = document.getElementById('team-step');
+  var teamSel  = document.getElementById('team-select');
+
+  if (!presetTeam || !TEAMS[presetTeam]) {
+    if (teamStep) teamStep.style.display = '';
+    if (teamSel) teamSel.disabled = false;
+    return '';
+  }
+
+  if (teamStep) teamStep.style.display = 'none';
+  if (teamSel) {
+    teamSel.disabled = true;
+    if (!teamSel.options.length || !Array.from(teamSel.options).some(function(opt){ return opt.value === presetTeam; })) {
+      var opt = document.createElement('option');
+      opt.value = presetTeam;
+      opt.textContent = presetTeam;
+      teamSel.appendChild(opt);
+    }
+    teamSel.value = presetTeam;
+  }
+
+  selectTeam(presetTeam);
+  return presetTeam;
 }
 
 function selectTeam(val) {
@@ -2105,6 +2157,8 @@ function confirmSignOut() {
     SCHED_URL  = '';
     var teamSel = document.getElementById('team-select');
     if (teamSel) teamSel.value = '';
+    applyPresetTeamFromURL();
+    checkLaunchReady();
 
     toast('👋 Signed out successfully', 't-info');
   }, 400);
@@ -2123,7 +2177,8 @@ function restoreRepProfile() {
   }
 
   try {
-    var t = localStorage.getItem('fieldos_team')     || '';
+    var presetTeam = getPresetTeamNameFromURL();
+    var t = presetTeam || localStorage.getItem('fieldos_team') || '';
     var n = localStorage.getItem('zito_rep_name')  || '';
     var p = localStorage.getItem('zito_rep_phone') || '';
     var e = localStorage.getItem('zito_rep_email') || '';
@@ -2137,6 +2192,9 @@ function restoreRepProfile() {
     if (p) repPhone = p;
     if (e) repEmail = e;
   } catch(err) {}
+
+  applyPresetTeamFromURL();
+  checkLaunchReady();
 }
 
 window.addEventListener('load', function(){ try { restoreRepProfile(); } catch(e) {} });
