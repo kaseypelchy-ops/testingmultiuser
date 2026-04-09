@@ -375,6 +375,9 @@ function fetchAddressesFromSheet() {
           salesperson: (row.salesperson || '').trim(),
           note:        (row.note || row.dispositionNote || row.disposition_note || '').toString().trim(),
           knockedAt:   (row.knockedAt || row.knocked_at || null),
+          decisionMakerSpokenTo: (row.decisionMakerSpokenTo || row.decision_maker_spoken_to || row['Decision Maker Spoken To'] || 'N').toString().trim().toUpperCase(),
+          followUpNeeded:        (row.followUpNeeded || row.follow_up_needed || row['Follow Up Needed'] || 'N').toString().trim().toUpperCase(),
+          saleMade:              (row.saleMade || row.sale_made || row['Sale Made'] || 'N').toString().trim().toUpperCase(),
           sale:        null
         };
       });
@@ -1473,6 +1476,7 @@ function openForm(id) {
   document.getElementById('f-install-date').value = '';
   document.getElementById('f-install-time').value = '';
   selSlot = null;
+  resetOutcomeFlags();
 
   ['sbt-nh','sbt-bs','sbt-ic','sbt-ni','sbt-gbl','sbt-vac','sbt-biz'].forEach(function(sid) {
     var el = document.getElementById(sid); if (el) el.className = 'stbtn';
@@ -1496,6 +1500,10 @@ function openForm(id) {
   if (!prevEntry) prevEntry = findDispByStatus(curStatus, DISPOSITIONS);
 
   if (prevEntry) {
+    setOutcomeFlags({
+      decisionMakerSpokenTo: addr.decisionMakerSpokenTo || 'N',
+      followUpNeeded: addr.followUpNeeded || 'N'
+    });
     prevStatus.textContent = prevEntry.label;
     prevStatus.className   = 'prev-disp-status s-' + curStatus;
     if (curNote) {
@@ -1519,6 +1527,10 @@ function openForm(id) {
   } else {
     prevDisp.style.display = 'none';
     if (nsWrap && nsNote) { nsWrap.classList.add('hidden'); nsNote.value = ''; }
+    setOutcomeFlags({
+      decisionMakerSpokenTo: addr.decisionMakerSpokenTo || 'N',
+      followUpNeeded: addr.followUpNeeded || 'N'
+    });
   }
 
   document.getElementById('panel-form').classList.add('open');
@@ -1545,6 +1557,9 @@ function clearPrevDisposition() {
   if (!addr) return;
   addr.status = 'pending';
   addr.note   = '';
+  addr.decisionMakerSpokenTo = 'N';
+  addr.followUpNeeded = 'N';
+  addr.saleMade = 'N';
   // Reset banner
   document.getElementById('prev-disposition').style.display = 'none';
   // Reset all disposition buttons for the current territory
@@ -1558,10 +1573,15 @@ function clearPrevDisposition() {
   var nsNote = document.getElementById('ns-note');
   if (nsWrap) nsWrap.classList.add('hidden');
   if (nsNote) nsNote.value = '';
+  resetOutcomeFlags();
   // Update marker and sidebar to reflect cleared status
   if (addr.lat && addr.lng) placeMarker(addr);
   buildList();
-  updateAddressStatus(addr, 'pending', '');
+  updateAddressStatus(addr, 'pending', '', {
+    decisionMakerSpokenTo: 'N',
+    followUpNeeded: 'N',
+    saleMade: 'N'
+  });
   toast('🗑 Disposition cleared', 't-info');
 }
 
@@ -1880,6 +1900,38 @@ function maybeWriteNewAddrToSheet(addr) {
   }).catch(function(){});
 }
 
+function boolToYN(val) {
+  return val ? 'Y' : 'N';
+}
+
+function ynToBool(val) {
+  return String(val || '').trim().toUpperCase() === 'Y';
+}
+
+function getOutcomeFlags(isSale) {
+  var decisionEl = document.getElementById('f-decision-maker');
+  var followEl   = document.getElementById('f-followup-needed');
+  return {
+    decisionMakerSpokenTo: boolToYN(isSale ? true : !!(decisionEl && decisionEl.checked)),
+    followUpNeeded:        boolToYN(!!(followEl && followEl.checked)),
+    saleMade:              boolToYN(!!isSale)
+  };
+}
+
+function setOutcomeFlags(flags) {
+  var decisionEl = document.getElementById('f-decision-maker');
+  var followEl   = document.getElementById('f-followup-needed');
+  if (decisionEl) decisionEl.checked = ynToBool(flags && flags.decisionMakerSpokenTo);
+  if (followEl)   followEl.checked   = ynToBool(flags && flags.followUpNeeded);
+}
+
+function resetOutcomeFlags() {
+  setOutcomeFlags({
+    decisionMakerSpokenTo: 'N',
+    followUpNeeded: 'N'
+  });
+}
+
 // ──────────────────────────────────────────────────────────
 //  SUBMIT
 // ──────────────────────────────────────────────────────────
@@ -1918,6 +1970,7 @@ function submitSale(pkgLabel) {
     pricingSummary += ' | Estimated Proration: $' + dueAtInstall + ' (' + diffDays + ' day proration)';
   }
 
+  var outcomeFlags = getOutcomeFlags(true);
   var payload = {
     territory: (activeTerritory || ''),
     salesperson: repName,
@@ -1930,7 +1983,10 @@ function submitSale(pkgLabel) {
     installDate: selSlot ? selSlot.date : (install || ''),
     installTime: selSlot ? selSlot.time : '',
     notes: notes,
-    status: 'Sale — ' + pkgLabel
+    status: 'Sale — ' + pkgLabel,
+    decisionMakerSpokenTo: outcomeFlags.decisionMakerSpokenTo,
+    followUpNeeded: outcomeFlags.followUpNeeded,
+    saleMade: outcomeFlags.saleMade
   };
 
   sendData(payload);
@@ -1944,7 +2000,10 @@ function submitSale(pkgLabel) {
   addr.status = (selPkg === 'mega') ? 'mega' : 'gig';
   addr.salesperson = repName;
   addr.sale   = { firstName: first, lastName: last, phone: phone, email: email, notes: notes };
-  updateAddressStatus(addr, addr.status);
+  addr.decisionMakerSpokenTo = outcomeFlags.decisionMakerSpokenTo;
+  addr.followUpNeeded = outcomeFlags.followUpNeeded;
+  addr.saleMade = outcomeFlags.saleMade;
+  updateAddressStatus(addr, addr.status, notes, outcomeFlags);
   addr.note = (notes || '').trim();
   if (addr.lat && addr.lng) placeMarker(addr);
   updateStats();
@@ -1963,12 +2022,16 @@ function submitStatus() {
   var notes   = (nsWrap && !nsWrap.classList.contains('hidden') && nsNote)
     ? (nsNote.value || '').trim()
     : '';
+  var outcomeFlags = getOutcomeFlags(false);
   var payload = {
     salesperson: repName,
     address: addr.address, city: addr.city||'', state: addr.state||'', zip: addr.zip||'',
     firstName:'', lastName:'', phone:'', email:'',
     package:'', notes: notes,
-    status: selStatus
+    status: selStatus,
+    decisionMakerSpokenTo: outcomeFlags.decisionMakerSpokenTo,
+    followUpNeeded: outcomeFlags.followUpNeeded,
+    saleMade: outcomeFlags.saleMade
   };
 
   // NOTE: sendData() is intentionally NOT called here — no-sale statuses
@@ -1984,7 +2047,10 @@ function submitStatus() {
   addr.status = smap[selStatus] || 'nocontact';
   addr.salesperson = repName;
   addr.note = notes || '';
-  updateAddressStatus(addr, addr.status, notes);
+  addr.decisionMakerSpokenTo = outcomeFlags.decisionMakerSpokenTo;
+  addr.followUpNeeded = outcomeFlags.followUpNeeded;
+  addr.saleMade = outcomeFlags.saleMade;
+  updateAddressStatus(addr, addr.status, notes, outcomeFlags);
   if (addr.lat && addr.lng) placeMarker(addr);
   updateStats();
   toast('📋 "' + selStatus + '" logged', 't-info');
@@ -1993,7 +2059,13 @@ function submitStatus() {
   closeForm();
 }
 
-function updateAddressStatus(addr, status, note) {
+function updateAddressStatus(addr, status, note, flags) {
+  var outcomeFlags = flags || {
+    decisionMakerSpokenTo: addr.decisionMakerSpokenTo || 'N',
+    followUpNeeded: addr.followUpNeeded || 'N',
+    saleMade: addr.saleMade || 'N'
+  };
+
   // Always send — manual addresses have no sheetRow but the backend can still
   // log by address text, and we need the disposition to survive GPS refreshes.
   fetch(webhookURL, {
@@ -2012,7 +2084,10 @@ function updateAddressStatus(addr, status, note) {
       salesperson:     repName,
       note:            (note || ''),
       dispositionNote: (note || ''),
-      knockedAt:       new Date().toISOString()
+      knockedAt:       new Date().toISOString(),
+      decisionMakerSpokenTo: outcomeFlags.decisionMakerSpokenTo,
+      followUpNeeded: outcomeFlags.followUpNeeded,
+      saleMade: outcomeFlags.saleMade
     })
   }).catch(function(){});
 }

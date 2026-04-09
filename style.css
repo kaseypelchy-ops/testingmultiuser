@@ -172,6 +172,37 @@ select.team-select option { background: var(--card); color: var(--text); }
   text-decoration: underline; cursor: pointer; padding: 0;
 }
 
+.outcome-flags {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.yn-flag {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface2);
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+}
+.yn-flag input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.outcome-help {
+  font-size: 11px;
+  color: var(--muted);
+  margin: -2px 0 14px;
+  line-height: 1.45;
+}
+
 /* ── APP PAGE ───────────────────────────────────────── */
 #page-app {
   display: none; height: 100vh; position: relative; overflow: hidden;
